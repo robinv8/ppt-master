@@ -68,29 +68,8 @@ jobs:
         run: |
           FOLDER="ppt-master-engine-${{ matrix.platform }}-${{ matrix.arch }}"
           cd dist-engine
-          if [[ -f "${FOLDER}.zip" ]]; then
-            ls -lh "${FOLDER}.zip"
-            exit 0
-          fi
-          if command -v 7z >/dev/null 2>&1; then
-            7z a -tzip "${FOLDER}.zip" "${FOLDER}"
-          elif command -v zip >/dev/null 2>&1; then
-            zip -ry "${FOLDER}.zip" "${FOLDER}"
-          elif command -v ditto >/dev/null 2>&1; then
-            ditto -c -k --keepParent "${FOLDER}" "${FOLDER}.zip"
-          else
-            python - <<PY
-          import pathlib, zipfile
-          root = pathlib.Path("${FOLDER}")
-          out = pathlib.Path("${FOLDER}.zip")
-          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-              for p in root.rglob("*"):
-                  if p.is_file():
-                      zf.write(p, p.as_posix())
-          print("wrote", out)
-          PY
-          fi
           ls -lh "${FOLDER}.zip"
+          python ../engine/validate_engine_zip.py "${FOLDER}.zip"
 
       - uses: actions/upload-artifact@v4
         with:

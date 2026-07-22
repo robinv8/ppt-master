@@ -186,36 +186,14 @@ chmod +x "$BIN" 2>/dev/null || true
 echo "==> Smoke: $BIN --version"
 "$BIN" --version
 
-# ── zip (portable: ditto / zip / 7z / python) ───────────────
-# Windows runners often lack `zip`; GitHub Actions has 7z. Prefer tools
-# that handle macOS dylibs correctly when available.
+# ── zip ─────────────────────────────────────────────────────
+# Always use Python zipfile so non-ASCII template paths carry the UTF-8 flag
+# consistently across macOS, Linux, and Windows release builds.
 ZIP_OUT="$ROOT/dist-engine/${FOLDER}.zip"
 rm -f "$ZIP_OUT"
 echo "==> Zip: $ZIP_OUT"
-(
-  cd "$ROOT/dist-engine"
-  if command -v ditto >/dev/null 2>&1; then
-    ditto -c -k --keepParent "$FOLDER" "${FOLDER}.zip"
-  elif command -v zip >/dev/null 2>&1; then
-    zip -ry "${FOLDER}.zip" "$FOLDER"
-  elif command -v 7z >/dev/null 2>&1; then
-    7z a -tzip "${FOLDER}.zip" "$FOLDER"
-  elif command -v 7za >/dev/null 2>&1; then
-    7za a -tzip "${FOLDER}.zip" "$FOLDER"
-  else
-    # Last resort: stdlib zipfile (no external tools)
-    "$VENV_PY" - <<PY
-import pathlib, zipfile
-root = pathlib.Path("$FOLDER")
-out = pathlib.Path("${FOLDER}.zip")
-with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-    for p in root.rglob("*"):
-        if p.is_file():
-            zf.write(p, p.as_posix())
-print("wrote", out, "bytes", out.stat().st_size)
-PY
-  fi
-)
+"$VENV_PY" "$ROOT/engine/zip_engine_pack.py" "$STAGE" "$ZIP_OUT"
+"$VENV_PY" "$ROOT/engine/validate_engine_zip.py" "$ZIP_OUT"
 ls -lh "$ZIP_OUT"
 
 echo "==> Pack ready: $STAGE"
