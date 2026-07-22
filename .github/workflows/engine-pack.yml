@@ -1,0 +1,149 @@
+# Build multi-arch engine packs and publish to GitHub Releases.
+#
+# Only path: push a tag matching engine-v*
+#   git tag engine-v0.1.0 && git push origin engine-v0.1.0
+#   → matrix build → published release on that tag (all platform zips)
+name: engine-pack
+
+on:
+  push:
+    tags:
+      - "engine-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+            python: "3.11"
+          # macos-13 retired (2025-12)
+          - os: macos-15-intel
+            platform: darwin
+            arch: x64
+            python: "3.11"
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+            python: "3.11"
+          - os: windows-2022
+            platform: win32
+            arch: x64
+            python: "3.11"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install rsync (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      - name: Build engine pack
+        shell: bash
+        env:
+          PYTHON: python
+          # tag engine-v0.1.0 → 0.1.0
+          ENGINE_VERSION: ${{ github.ref_name }}
+        run: |
+          chmod +x engine/build.sh
+          V="${ENGINE_VERSION#engine-v}"
+          V="${V#v}"
+          export ENGINE_VERSION="$V"
+          engine/build.sh
+
+      - name: Ensure zip
+        shell: bash
+        run: |
+          FOLDER="ppt-master-engine-${{ matrix.platform }}-${{ matrix.arch }}"
+          cd dist-engine
+          if [[ -f "${FOLDER}.zip" ]]; then
+            ls -lh "${FOLDER}.zip"
+            exit 0
+          fi
+          if command -v 7z >/dev/null 2>&1; then
+            7z a -tzip "${FOLDER}.zip" "${FOLDER}"
+          elif command -v zip >/dev/null 2>&1; then
+            zip -ry "${FOLDER}.zip" "${FOLDER}"
+          elif command -v ditto >/dev/null 2>&1; then
+            ditto -c -k --keepParent "${FOLDER}" "${FOLDER}.zip"
+          else
+            python - <<PY
+          import pathlib, zipfile
+          root = pathlib.Path("${FOLDER}")
+          out = pathlib.Path("${FOLDER}.zip")
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+              for p in root.rglob("*"):
+                  if p.is_file():
+                      zf.write(p, p.as_posix())
+          print("wrote", out)
+          PY
+          fi
+          ls -lh "${FOLDER}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pack-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist-engine/ppt-master-engine-${{ matrix.platform }}-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    # Publish whatever matrix legs produced artifacts (do not require every OS).
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: pack-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: |
+          ls -lah artifacts/ || true
+          test -n "$(ls artifacts/*.zip 2>/dev/null)" || { echo "no zips to publish"; exit 1; }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          make_latest: false
+          files: artifacts/*.zip
+          fail_on_unmatched_files: true
+          body: |
+            Self-contained **ppt-master engine packs** for desktop embeds (e.g. MindMux).
+
+            Built automatically from tag `${{ github.ref_name }}`.
+
+            | Asset | Platform |
+            |-------|----------|
+            | `ppt-master-engine-darwin-arm64.zip` | macOS Apple Silicon |
+            | `ppt-master-engine-darwin-x64.zip` | macOS Intel |
+            | `ppt-master-engine-linux-x64.zip` | Linux x64 |
+            | `ppt-master-engine-win32-x64.zip` | Windows x64 |
+
+            ```
+            ppt-master-engine-<platform>-<arch>/
+              bin/ppt-master-engine/
+              skills/ppt-master/
+              manifest.json
+            ```
+
+            URL:
+            `https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ppt-master-engine-{platform}-{arch}.zip`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
