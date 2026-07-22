@@ -56,6 +56,12 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from console_encoding import configure_utf8_stdio  # noqa: E402
+from icon_resources import (  # noqa: E402
+    icon_base_size,
+    icon_store_available,
+    resolve_icon_resource_path,
+    suggest_icon_name_in_store,
+)
 from svg_to_pptx.drawingml.utils import parse_project_geometry_length  # noqa: E402
 
 configure_utf8_stdio()
@@ -170,61 +176,12 @@ def _extract_shape_elements(content: str, color: str) -> list[str]:
 
 def _resolve_in_dir(icon_name: str, icons_dir: Path) -> tuple[Path, float]:
     """Resolve `icon_name` against a single icons dir (no fallback)."""
-    if '/' in icon_name:
-        lib, name = icon_name.split('/', 1)
-        lib = _ICON_LIBRARY_ALIASES.get(lib, lib)  # resolve aliases
-        icon_path = icons_dir / lib / f'{name}.svg'
-        base_size = ICON_BASE_SIZES.get(lib, 24)
-    else:
-        # Backward compatibility: un-prefixed names fall back to legacy chunk-filled/ library
-        icon_path = icons_dir / 'chunk-filled' / f'{icon_name}.svg'
-        base_size = 16
-        if not icon_path.exists():
-            icon_path = icons_dir / f'{icon_name}.svg'  # legacy flat layout
-            base_size = 16
-
-    return icon_path, base_size
+    return resolve_icon_resource_path(icon_name, icons_dir), icon_base_size(icon_name)
 
 
 def _casefold_icon_name_in_dir(icon_name: str, icons_dir: Path) -> str | None:
     """Return the exact on-disk identifier when only casing differs."""
-    if not icons_dir.is_dir():
-        return None
-
-    search_dirs: list[Path] = []
-    expected_name = icon_name
-    if '/' in icon_name:
-        raw_lib, expected_name = icon_name.split('/', 1)
-        requested_lib = _ICON_LIBRARY_ALIASES.get(raw_lib.casefold(), raw_lib)
-        library_dir = icons_dir / requested_lib
-        if not library_dir.is_dir():
-            library_dir = next(
-                (
-                    path for path in icons_dir.iterdir()
-                    if path.is_dir()
-                    and path.name.casefold() == requested_lib.casefold()
-                ),
-                library_dir,
-            )
-        search_dirs.append(library_dir)
-    else:
-        search_dirs.extend((icons_dir / 'chunk-filled', icons_dir))
-
-    expected_filename = f'{expected_name}.svg'.casefold()
-    for search_dir in search_dirs:
-        if not search_dir.is_dir():
-            continue
-        matches = sorted(
-            path for path in search_dir.iterdir()
-            if path.is_file()
-            and path.suffix.casefold() == '.svg'
-            and path.name.casefold() == expected_filename
-        )
-        if len(matches) != 1:
-            continue
-        relative = matches[0].relative_to(icons_dir).with_suffix('')
-        return relative.as_posix()
-    return None
+    return suggest_icon_name_in_store(icon_name, icons_dir)
 
 
 def suggest_icon_name(
@@ -535,7 +492,7 @@ Examples:
     args = parser.parse_args()
     
     # Validate icon directory
-    if not args.icons_dir.exists():
+    if not icon_store_available(args.icons_dir):
         print(f"[ERROR] Icon directory not found: {args.icons_dir}")
         sys.exit(1)
 

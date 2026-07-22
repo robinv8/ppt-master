@@ -54,6 +54,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from console_encoding import configure_utf8_stdio  # noqa: E402
+from icon_resources import read_icon_svg  # noqa: E402
 from server_common import (  # noqa: E402
     claim_lock as _claim_lock,
     clear_lock as _clear_lock,
@@ -1147,8 +1148,7 @@ def _build_catalogs() -> dict:
 
 def _icon_preview_svg(library: str, name: str) -> str:
     """Read a trusted sample SVG from the bundled icon templates."""
-    icon_path = _ICON_LIBRARY_DIR / library / f'{name}.svg'
-    raw = icon_path.read_text(encoding='utf-8')
+    raw = read_icon_svg(f'{library}/{name}', _ICON_LIBRARY_DIR)
     raw = re.sub(r'<\?xml[^>]*>\s*', '', raw)
     raw = re.sub(r'<!--.*?-->\s*', '', raw, flags=re.S)
     return raw.strip()

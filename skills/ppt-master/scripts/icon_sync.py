@@ -34,20 +34,19 @@ from pathlib import Path
 from typing import Optional
 
 from console_encoding import configure_utf8_stdio
+from icon_resources import (
+    resolve_icon_resource_path,
+    split_icon_name,
+)
 
 configure_utf8_stdio()
 
-_LIB_ALIASES = {"chunk": "chunk-filled"}
 _GLOBAL_ICONS_DIR = Path(__file__).resolve().parent.parent / "templates" / "icons"
 
 
 def _split_name(icon_name: str) -> tuple[str, str]:
     """`lib/name` -> (lib, name), applying the chunk→chunk-filled alias."""
-    if "/" not in icon_name:
-        # legacy un-prefixed names live in chunk-filled/
-        return "chunk-filled", icon_name
-    lib, name = icon_name.split("/", 1)
-    return _LIB_ALIASES.get(lib, lib), name
+    return split_icon_name(icon_name)
 
 
 def sync_icons(project_path: Path, icon_names: list[str], global_dir: Path = _GLOBAL_ICONS_DIR) -> tuple[list[str], list[str]]:
@@ -62,7 +61,7 @@ def sync_icons(project_path: Path, icon_names: list[str], global_dir: Path = _GL
 
     for raw in icon_names:
         lib, name = _split_name(raw)
-        src = global_dir / lib / f"{name}.svg"
+        src = resolve_icon_resource_path(f"{lib}/{name}", global_dir)
         dst = project_icons / lib / f"{name}.svg"
         if src.is_file():
             dst.parent.mkdir(parents=True, exist_ok=True)
